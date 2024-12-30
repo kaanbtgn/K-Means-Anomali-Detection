@@ -15,6 +15,7 @@ def train_kmeans_nsl_kdd(train_csv_path="../NSL_KDD-master/KDDTrain+.csv"):
     """
     NSL-KDD veri setinden K-Means eğitimi ve görselleştirme.
     -> kmeans_model.pkl, scaler.pkl, threshold_value.pkl, proto_labelencoder.pkl
+    Not: Sadece PCA tabanlı küme dağılım grafiği çizdirilir (histogram yok).
     """
 
     print("[TRAIN] NSL-KDD üzerinden K-Means eğitimi başlıyor...")
@@ -56,7 +57,7 @@ def train_kmeans_nsl_kdd(train_csv_path="../NSL_KDD-master/KDDTrain+.csv"):
     kmeans = KMeans(n_clusters=2, random_state=42)
     kmeans.fit(X_scaled)
 
-    # --- 7) Örneklerin küme merkezlerine olan mesafeleri
+    # --- 7) Örneklerin küme merkezlerine olan mesafeleri (en yakın merkez)
     distances = pairwise_distances(X_scaled, kmeans.cluster_centers_, metric='euclidean')
     min_distances = distances.min(axis=1)
 
@@ -77,7 +78,7 @@ def train_kmeans_nsl_kdd(train_csv_path="../NSL_KDD-master/KDDTrain+.csv"):
     with open("proto_labelencoder.pkl", "wb") as pf:
         pickle.dump(le_proto, pf)
 
-    # --- Terminale çıktılar
+    # --- Terminale çıktı
     print("[i] K-Means eğitimi tamamlandı!")
     print(f"    -> Eşik (Threshold) değeri: {threshold:.4f}")
     print(f"    -> Toplam veri sayısı: {len(X_scaled)}")
@@ -85,80 +86,56 @@ def train_kmeans_nsl_kdd(train_csv_path="../NSL_KDD-master/KDDTrain+.csv"):
     print(f"    -> Normal (eşik altı) sayısı: {len(inliers)}")
     print("    -> Kaydedilen dosyalar: kmeans_model.pkl, scaler.pkl, threshold_value.pkl, proto_labelencoder.pkl")
 
-    # --- 11) GÖRSEL ÇIKTILAR:  
-    #     (a) KMeans küme dağılımı (2D PCA) + anomali noktaları
-    #     (b) min_distances histogramı ve threshold
+    # ========== SADECE PCA GRAFİĞİ ==========
 
     # (a) 2D PCA ile dönüştürme
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(X_scaled)
-    # Hangi cluster'a düştüğünü bul
-    clusters = kmeans.predict(X_scaled)
-    # Küme merkezlerini de PCA uzayına al
+
+    # Küme merkezlerini PCA uzayına dönüştür
     centers_pca = pca.transform(kmeans.cluster_centers_)
 
-    # --- Kümeleri ve anomalileri çiz
-    plt.figure(figsize=(10, 7))  # Figür boyutu küçültüldü
-    plt.title("K-Means Kümeleri ve Anomaliler (PCA ile İndirgenmiş)", fontsize=16)
+    # Tek bir figür ve subplot
+    fig, ax = plt.subplots(figsize=(10, 7))
+    fig.suptitle("K-Means Dağılımı (NSL-KDD) ve Anomali Tespiti", 
+                 fontsize=15, fontweight='bold')
 
-    # Normal noktalar (inliers) - Siyah noktalar
-    scatter_inliers = plt.scatter(
-        X_pca[inliers, 0], X_pca[inliers, 1], 
-        c='black', 
-        marker='o', 
-        s=10,  # Nokta boyutu sabit
-        alpha=0.6, 
-        label='Normal (Inliers)',
-        edgecolor='blue',
-        zorder=1
+    # Normal noktalar (Inliers) -> Mavi daire
+    ax.scatter(
+        X_pca[inliers, 0], X_pca[inliers, 1],
+        c='blue', marker='o', s=30,
+        alpha=0.6, label='Normal (Inliers)'
     )
 
-    # Anomaliler (outliers) - Kırmızı yıldızlar
-    scatter_anomalies = plt.scatter(
-        X_pca[anomalies, 0], X_pca[anomalies, 1], 
-        c='red', 
-        marker='*', 
-        s=50,  # Nokta boyutu sabit
-        edgecolor='black',
-        label='Anomali (Outliers)',
-        zorder=3
+    # Anomaliler (Outliers) -> Kırmızı 'X'
+    ax.scatter(
+        X_pca[anomalies, 0], X_pca[anomalies, 1],
+        c='red', marker='x', s=80,
+        alpha=0.8, label='Anomali (Outliers)'
     )
 
-    # Küme merkezleri (Sarı yıldızlar)
-    scatter_centers = plt.scatter(
-        centers_pca[:, 0], centers_pca[:, 1], 
-        c='yellow', 
-        marker='*', 
-        s=300,  # Küme merkezi boyutu sabit
-        edgecolor='black', 
-        label='Küme Merkezleri',
-        zorder=4
+    # Küme merkezleri (Siyah yıldız)
+    ax.scatter(
+        centers_pca[:, 0], centers_pca[:, 1],
+        c='black', marker='*', s=250,
+        edgecolor='white', linewidth=1,
+        label='Küme Merkezleri'
     )
 
-    # Eksen sınırlarını ayarla (Ölçeği düşürme)
-    # Burada örnek olarak, PCA bileşenlerinin ±3 standart sapma içerisinde olmasını sağlıyoruz
+    # Eksen sınırlarını (örnek) PCA’nın ±3 std sapması seviyesinde kırpabiliriz
     pca_std = np.std(X_pca, axis=0)
-    plt.xlim(-3 * pca_std[0], 3 * pca_std[0])
-    plt.ylim(-3 * pca_std[1], 3 * pca_std[1])
+    ax.set_xlim(-3 * pca_std[0], 3 * pca_std[0])
+    ax.set_ylim(-3 * pca_std[1], 3 * pca_std[1])
 
-    plt.xlabel("PCA Bileşeni 1", fontsize=14)
-    plt.ylabel("PCA Bileşeni 2", fontsize=14)
-    plt.legend(loc='upper right', fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.show()
+    # Eksen isimlerini daha anlaşılır yapalım
+    ax.set_xlabel("1. Özellik Boyutu (PCA)", fontsize=12)
+    ax.set_ylabel("2. Özellik Boyutu (PCA)", fontsize=12)
 
-    # (b) min_distances histogramı ve threshold
-    plt.figure(figsize=(10, 5))  # Figür boyutu küçültüldü
-    plt.title("Minimum Mesafelerin Dağılımı", fontsize=16)
-    plt.hist(min_distances, bins=100, alpha=0.75, color='skyblue', edgecolor='black')
-    plt.axvline(threshold, color='red', linestyle='--', linewidth=2, 
-                label=f'Eşik (95. Persentil): {threshold:.2f}')
-    plt.xlabel("Örneklerin En Yakın Küme Merkezine Uzaklığı", fontsize=14)
-    plt.ylabel("Frekans", fontsize=14)
-    plt.legend(fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.tight_layout()
+    ax.legend(loc='upper right', fontsize=10)
+    ax.grid(True, linestyle='--', alpha=0.5)
+
+    # Yerleşimi düzenle
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.show()
 
 
